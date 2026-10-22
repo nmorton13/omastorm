@@ -8,8 +8,8 @@ Live weather radar in your Omarchy bar. Beta.
 
 A radar that lives next to the clock. The popover shows your selected radar
 and its actual scan time. Click the map (or press Enter) for the full
-window: individual NOAA NEXRAD sweeps in the U.S. and the EUMETNET OPERA
-European mosaic, drawn in your Omarchy theme.
+window: individual NOAA NEXRAD sweeps, the NOAA MRMS contiguous-U.S.
+mosaic, and the EUMETNET OPERA European mosaic, drawn in your Omarchy theme.
 
 This page is the user guide: install, first run, and everyday use. How the
 code is built lives in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -59,9 +59,9 @@ you left off.
 
 ## Coverage
 
-U.S. radar comes from NOAA NEXRAD; European radar comes from EUMETNET
-OPERA. Coverage depends on radar range and the data available from each
-provider. Some areas have no radar data, even when their cities appear in
+U.S. radar comes from NOAA NEXRAD, and `Shift+N` switches to the NOAA MRMS
+mosaic for the contiguous U.S. European radar comes from EUMETNET OPERA.
+Coverage depends on radar range and the data available from each provider. Some areas have no radar data, even when their cities appear in
 search.
 
 [![EUMETNET OPERA radar mosaic over Warsaw, Poland](docs/media/readme/omastorm-europe.png)](https://github.com/wesleygrimes/omastorm/releases/download/v0.1.14/omastorm-europe.mp4)
@@ -70,10 +70,15 @@ search.
 
 ## What you are looking at
 
-Omastorm currently uses two radar products. In the U.S., NOAA NEXRAD provides
+Omastorm uses three radar products. In the U.S., NOAA NEXRAD provides
 individual radar volumes: each dish spins, sends a pulse, and measures how
 much bounced back. In Europe, EUMETNET OPERA provides a mosaic
 combining the strongest radar returns at each location.
+
+Press `Shift+N` for NOAA's MRMS mosaic: every U.S. radar merged into one
+image, covering the contiguous U.S. Press it again, or `n`, to go back to the
+nearest station. You can also search **mrms**. It never turns on by itself,
+and looping its hour of history uses more CPU than a single station.
 
 For NEXRAD, Omastorm shows **reflectivity** on the lowest tilt: the beam that
 stays closest to the ground. OPERA combines multiple radars and elevations into one image.
@@ -123,7 +128,7 @@ airport code to read its raw METAR. These are current observations, not
 forecasts or flight guidance.
 
 The overlay is off by default and works with live NEXRAD radar in the U.S. and
-Canada. It is unavailable on the European OPERA mosaic. To start with it on,
+Canada. It is unavailable on MRMS and OPERA mosaics. To start with it on,
 set `[metar] show = true` in your configuration. With no config file, or when
 `[metar] mark` is omitted, each airport is a pin. The pictures below use the
 filled chip (`mark = "chip"`). You can also choose how many airports appear
@@ -137,6 +142,9 @@ and how they are selected; see [configuration](docs/configuration.md#display-and
 ## Search
 
 `/` (or `s`) is one field. Type a city, a radar site or mosaic name, or paste coordinates.
+Search accepts up to 256 characters. Keyboard and middle-click paste use
+`wl-paste` from wl-clipboard. Failed, oversized, or timed-out pastes leave
+the query unchanged and show an error.
 
 A **city** centres the map there, unlocks, and selects a covering source. Type
 a region or country qualifier when needed, such as `London, UK`.
@@ -148,7 +156,7 @@ still applies when choosing a place.
 A **site** (`KTLX`, `tlx`) locks that dish and centres on it. Clicking the
 source title opens the same card on covering mosaics and nearby dishes.
 
-A **mosaic** (`opera`) locks that source and centres the map on its coverage.
+A **mosaic** (`opera` or `mrms-conus`) locks that source and centres the map on its coverage.
 
 ![Search a radar site](docs/media/readme/search-site.png)
 
@@ -175,7 +183,8 @@ map. It is not a new row of chrome.
 
 Selecting a radar loads its recent scans for playback. NEXRAD history grows
 toward **60 frames / two hours**;
-OPERA retains up to **12 mosaic frames**. Older scans drop out.
+OPERA retains up to **12 mosaic frames**; MRMS retains up to **30 frames / one hour**.
+Older scans drop out.
 
 Space and the Play button loop from the selected completed frame through the
 newest completed scan, returning to the selection each time. Starting from
@@ -190,6 +199,9 @@ slower in clear air). While a volume is in progress the engine reads live
 chunks, so the sweep can paint as the antenna turns. If no new chunk arrives
 for 90 seconds it rediscovers the latest volume; cached frames stay. OPERA
 polls its public 24-hour cache and loads complete mosaic frames.
+MRMS checks for new data every 30 seconds while selected. If the feed drops,
+the loop you have keeps playing. There's no METAR overlay or weak-return
+filtering on MRMS.
 
 ## Look
 
@@ -219,6 +231,7 @@ Chrome follows the Omarchy theme. Radar color comes from the measured reflectivi
 | `0` | Reset to the configured or weather location |
 | `/` or `s` | Search |
 | `n` | Follow the covering radar (camera stays) |
+| `Shift+N` | All radars: the mosaic covering the map, on or off (camera stays) |
 | `Shift+L` | Lock the radar |
 | `m` | My location |
 | Space | Loop from the selected frame / pause |
@@ -227,6 +240,7 @@ Chrome follows the Omarchy theme. Radar color comes from the measured reflectivi
 | `1` `2` `3` | Pixels, Glyphs, Stipple |
 | `w` | Show weak returns |
 | `a` | Show or hide aviation observations |
+| `f` | Focus mode: the map alone |
 | `?` | This map |
 | Esc | Close |
 
@@ -244,6 +258,7 @@ center_lon = -79.97948
 
 treatment = "GLYPHS"  # PIXELS, GLYPHS, or STIPPLE at launch
 weak_floor = 5        # dBZ; false draws every measured return
+focus_mode = false    # true opens on the map alone
 
 [metar]
 show = true           # optional; start with airport reports on the map
@@ -255,8 +270,11 @@ zoom_in = "+ ="
 
 A bad value is named in the status slot and that setting stays on its
 default. Keys are Qt sequences; an empty string unbinds. `1` `2` `3` change
-treatment, `w` changes the weak-return floor, and `a` toggles aviation mode
-for the session without writing the file.
+treatment, `w` changes the weak-return floor, `a` toggles aviation mode, and
+`f` toggles focus mode for the session without writing the file.
+
+The window drops the brand row and the legend when it is too small for
+them, and gets them back when it grows.
 
 ## Update
 
@@ -272,6 +290,10 @@ that notice in the popover restarts the shell.
 ## If something is wrong
 
 If expand or the keybind does nothing after an update, restart the shell.
+
+If a mosaic reports that your GPU cannot display its native image size, choose
+another radar source. MRMS needs a native 7000×3500 texture. Omastorm checks the
+uploaded image before displaying it and also reports if that check cannot run.
 
 The engine is one daemon per login. Its log is
 `$XDG_RUNTIME_DIR/omastorm/engine.log` (usually `/run/user/<uid>/omastorm/`).
@@ -306,7 +328,8 @@ Then delete the `o.bind` line if you added one.
 
 ## Data
 
-Radar: NOAA NEXRAD Level II via the NOAA Open Data program on AWS; Europe
+Radar: NOAA NEXRAD Level II via the NOAA Open Data program on AWS;
+NOAA/NSSL MRMS QC base reflectivity via its public S3 archive; Europe
 mosaic from [EUMETNET OPERA](https://www.eumetnet.eu/) COMP DBZH via the
 [Open Radar Data](https://eumetnet.github.io/openradardata-documentation/1-ORD-API-overview/)
 24-hour cache ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Basemap: ©
@@ -338,7 +361,7 @@ Thanks to these people
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://omastorm.com/"><img src="https://avatars.githubusercontent.com/u/324308?v=4?s=100" width="100px;" alt="Wes Grimes"/><br /><sub><b>Wes Grimes</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=wesleygrimes" title="Code">💻</a> <a href="https://github.com/wesleygrimes/omastorm/commits?author=wesleygrimes" title="Documentation">📖</a> <a href="#maintenance-wesleygrimes" title="Maintenance">🚧</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/scottjones"><img src="https://avatars.githubusercontent.com/u/444693?v=4?s=100" width="100px;" alt="Scott Jones"/><br /><sub><b>Scott Jones</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=scottjones" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/scottjones"><img src="https://avatars.githubusercontent.com/u/444693?v=4?s=100" width="100px;" alt="Scott Jones"/><br /><sub><b>Scott Jones</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=scottjones" title="Code">💻</a> <a href="https://github.com/wesleygrimes/omastorm/commits?author=scottjones" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/shieldsworks"><img src="https://avatars.githubusercontent.com/u/92273925?v=4?s=100" width="100px;" alt="Casey Shields"/><br /><sub><b>Casey Shields</b></sub></a><br /><a href="#infra-shieldsworks" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/wesleygrimes/omastorm/commits?author=shieldsworks" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/airtwo"><img src="https://avatars.githubusercontent.com/u/3505656?v=4?s=100" width="100px;" alt="Chance Griffin"/><br /><sub><b>Chance Griffin</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=airtwo" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/TheFifeDawg"><img src="https://avatars.githubusercontent.com/u/226545193?v=4?s=100" width="100px;" alt="Michael Pfeifer"/><br /><sub><b>Michael Pfeifer</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=TheFifeDawg" title="Code">💻</a></td>
@@ -353,6 +376,9 @@ Thanks to these people
       <td align="center" valign="top" width="14.28%"><a href="https://mikeyockey.com"><img src="https://avatars.githubusercontent.com/u/306343?v=4?s=100" width="100px;" alt="Michael Yockey"/><br /><sub><b>Michael Yockey</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/issues?q=author%3Ayock" title="Bug reports">🐛</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/fearjet44"><img src="https://avatars.githubusercontent.com/u/314382095?v=4?s=100" width="100px;" alt="Justin Hagemeier"/><br /><sub><b>Justin Hagemeier</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=fearjet44" title="Code">💻</a> <a href="https://github.com/wesleygrimes/omastorm/commits?author=fearjet44" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Noah-Brown"><img src="https://avatars.githubusercontent.com/u/14036855?v=4?s=100" width="100px;" alt="Noah-Brown"/><br /><sub><b>Noah-Brown</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=Noah-Brown" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://neidetcher.com"><img src="https://avatars.githubusercontent.com/u/21937?v=4?s=100" width="100px;" alt="Demian Neidetcher"/><br /><sub><b>Demian Neidetcher</b></sub></a><br /><a href="https://github.com/wesleygrimes/omastorm/commits?author=demian0311" title="Code">💻</a> <a href="https://github.com/wesleygrimes/omastorm/commits?author=demian0311" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>

@@ -29,7 +29,8 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/444693?v=4",
       "profile": "https://github.com/scottjones",
       "contributions": [
-        "code"
+        "code",
+        "doc"
       ]
     },
     {
@@ -143,6 +144,16 @@
       "profile": "https://github.com/Noah-Brown",
       "contributions": [
         "code"
+      ]
+    },
+    {
+      "login": "demian0311",
+      "name": "Demian Neidetcher",
+      "avatar_url": "https://avatars.githubusercontent.com/u/21937?v=4",
+      "profile": "http://neidetcher.com",
+      "contributions": [
+        "code",
+        "doc"
       ]
     }
   ],

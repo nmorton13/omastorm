@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Window
 import Quickshell
 import "Metar.js" as Metar
 
@@ -53,7 +54,8 @@ Item {
     // and tag stay away too.
     readonly property bool drawable: !!scan && scan.scanTime !== ""
     readonly property int bands: scan ? scan.palette.length : 0
-    property string error: ""
+    property string graphicsError: ""
+    readonly property string error: graphicsError || textureCheck.error
     signal tilesNeeded(int z, int x0, int y0, int x1, int y1)
     /// ICAO chips replace city names when METAR is on. Click is a pick, not a pan.
     signal metarPicked(var report)
@@ -396,7 +398,7 @@ Item {
             property color minorRoads: Qt.alpha(map.theme.foreground, .24)
             property color majorRoads: Qt.alpha(map.theme.foreground, .48)
             fragmentShader: "shaders/tile.frag.qsb"
-            onStatusChanged: if (status === ShaderEffect.Error) map.error = "Basemap GPU shader failed: " + log
+            onStatusChanged: if (status === ShaderEffect.Error) map.graphicsError = "Basemap GPU shader failed: " + log
         }
     }
 
@@ -667,7 +669,17 @@ Item {
         + (scan && scan.site ? scan.site.id : "") + "/" + (mosaic ? "mosaic" : "polar")
     property var frontBuffer: null
     property var loadingBuffer: null
-    readonly property bool radarReady: drawable && !!frontBuffer
+    // A recreated scene graph uploads textures again, so its native-size
+    // check must run again too, even when the engine frame has not changed.
+    Connections {
+        target: map.Window.window
+        function onSceneGraphInvalidated() {
+            map.frontBuffer = null;
+            map.loadingBuffer = null;
+            Qt.callLater(map.stageSweep);
+        }
+    }
+    readonly property bool radarReady: drawable && !error && !!frontBuffer
         && !!frontBuffer.snapshot && frontBuffer.snapshot.key === sweepKey
     readonly property var renderScan: radarReady ? frontBuffer.snapshot.scan : null
     readonly property bool renderMosaic: !!renderScan && renderScan.kind === "mosaic"
@@ -687,14 +699,24 @@ Item {
             sweepB.snapshot = null;
             return;
         }
-        if (frontBuffer && frontBuffer.snapshot.key !== sweepKey) {
-            frontBuffer = null;
+        // Release any buffer from another source or site, so a retiring
+        // buffer does not hold the old source's image (OPERA is ~64 MiB).
+        for (var stale of [sweepA, sweepB]) {
+            if (!stale.snapshot || stale.snapshot.key === sweepKey) continue;
+            stale.snapshot = null;
+            if (frontBuffer === stale) frontBuffer = null;
+            if (loadingBuffer === stale) loadingBuffer = null;
         }
         function matches(buffer) {
             return buffer && buffer.snapshot && buffer.snapshot.key === sweepKey
                 && buffer.snapshot.texture === texture && buffer.snapshot.lut === azimuthLut;
         }
-        if (matches(frontBuffer)) return;
+        if (matches(frontBuffer)) {
+            // Seeking back can supersede a failed or still-checking upload.
+            loadingBuffer = null;
+            (frontBuffer === sweepA ? sweepB : sweepA).snapshot = null;
+            return;
+        }
         if (matches(loadingBuffer)) { presentSweep(); return; }
         loadingBuffer = frontBuffer === sweepA ? sweepB : sweepA;
         loadingBuffer.snapshot = { key: sweepKey, scan: scan, texture: texture, lut: azimuthLut };
@@ -704,7 +726,8 @@ Item {
         var buffer = loadingBuffer;
         if (!buffer || !buffer.snapshot || !drawable
             || buffer.snapshot.key !== sweepKey || buffer.snapshot.texture !== texture
-            || buffer.snapshot.lut !== azimuthLut || !buffer.ready) return;
+            || buffer.snapshot.lut !== azimuthLut || !buffer.ready
+            || needsTextureCheck(buffer.snapshot.scan) && !textureCheck.ready) return;
         frontBuffer = buffer;
         loadingBuffer = null;
     }
@@ -736,6 +759,20 @@ Item {
     }
     SweepBuffer { id: sweepA }
     SweepBuffer { id: sweepB }
+    // Only grids past 4096 px risk a silent downscale: every GPU this runs
+    // on uploads 4096 natively, and the check needs ES 3, which would turn
+    // OPERA away on GLES2 machines that draw it today.
+    function needsTextureCheck(frame) {
+        return !!frame && frame.kind === "mosaic" && Math.max(frame.width, frame.height) > 4096;
+    }
+    TextureCheck {
+        id: textureCheck
+        readonly property var frame: map.loadingBuffer && map.loadingBuffer.snapshot
+            ? map.loadingBuffer.snapshot.scan : null
+        image: map.needsTextureCheck(frame) ? map.loadingBuffer.sweep : null
+        expectedSize: map.needsTextureCheck(frame) ? Qt.size(frame.width, frame.height) : Qt.size(0, 0)
+        onReadyChanged: if (ready) Qt.callLater(map.presentSweep)
+    }
     // The frame's palette as a bands x 1 strip; the shader samples
     // texel centers, so radar and legend share the socket palette.
     // The strip stays visible so its children get scene-graph nodes
@@ -763,12 +800,13 @@ Item {
     }
     ShaderEffect {
         id: radarEffect
+        objectName: "radar-layer"
         visible: map.radarReady && !map.renderMosaic
         // The radar alone, not the basemap: .6 under UNAVAILABLE.
         opacity: map.sweepOpacity
         anchors.fill: parent
-        onStatusChanged: if (status === ShaderEffect.Error) map.error = "Radar GPU shader failed: " + log
-        Component.onCompleted: if (GraphicsInfo.api === GraphicsInfo.Software) map.error = "Radar requires GPU rendering (OpenGL/Vulkan)."
+        onStatusChanged: if (status === ShaderEffect.Error) map.graphicsError = "Radar GPU shader failed: " + log
+        Component.onCompleted: if (GraphicsInfo.api === GraphicsInfo.Software) map.graphicsError = "Radar requires GPU rendering (OpenGL/Vulkan)."
         property var sweep: map.frontBuffer ? map.frontBuffer.sweep : sweepA.sweep
         property var azimuthLut: map.frontBuffer ? map.frontBuffer.lut : sweepA.lut
         property var swatches: paletteTexture
@@ -797,7 +835,7 @@ Item {
         visible: map.radarReady && map.renderMosaic
         opacity: map.sweepOpacity
         anchors.fill: parent
-        onStatusChanged: if (status === ShaderEffect.Error) map.error = "Grid GPU shader failed: " + log
+        onStatusChanged: if (status === ShaderEffect.Error) map.graphicsError = "Grid GPU shader failed: " + log
         property var sweep: map.frontBuffer ? map.frontBuffer.sweep : sweepA.sweep
         property var swatches: paletteTexture
         property int bands: map.renderBands
@@ -843,6 +881,7 @@ Item {
         visible: true
         Repeater {
             id: coverageRepeater
+            objectName: "coverage-delegates"
             model: map.coverageSites
             Loader {
                 id: footprint
@@ -907,6 +946,7 @@ Item {
                     && overlayCamera.y+y >= 26 && overlayCamera.y+y+height <= map.height-30
                 color: Qt.alpha(map.theme.background, .88)
                 Text {
+                    textFormat: Text.PlainText
                     x: 3; anchors.verticalCenter: parent.verticalCenter
                     text: modelData.name; color: Qt.alpha(map.theme.foreground, .75)
                     font.family: map.theme.font; font.pixelSize: map.labelSize
@@ -941,6 +981,7 @@ Item {
                          : ink ? "transparent"
                          : Qt.alpha(map.theme.background, .88)
                     Text {
+                        textFormat: Text.PlainText
                         x: 3; anchors.verticalCenter: parent.verticalCenter
                         text: modelData.name
                         color: parent.block ? "#ffffff"
@@ -966,6 +1007,7 @@ Item {
             visible: map.siteId !== "" || (map.mosaic && map.sourceId !== "")
             border.width: map.locked ? 1 : 0; border.color: map.theme.accent
             Text {
+                textFormat: Text.PlainText
                 id: siteTag
                 x: 3; anchors.verticalCenter: parent.verticalCenter
                 text: map.siteId || (map.mosaic ? map.sourceId : "")
